@@ -6,3 +6,5 @@ All code required to reproduce the main analysis figures of the paper “Unbiase
 First, Seurat analysis for the two sets of cells ( before grafting and after grafting ) and cell cycle scoring [Seurat_analysis](bin/Seurat_analysis.md).
 
 DE detection with SAMseq [run_samseq](bin/run_samseq.md).
+
+Comparison to the Mouse Brain Atlas clusters [compare_to_linnarsson_atlas](bin/compare_to_linnarsson_atlas.md).
