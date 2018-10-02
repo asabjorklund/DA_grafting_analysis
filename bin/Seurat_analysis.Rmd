@@ -1,0 +1,271 @@
+---
+title: "SC3 package analysis part2"
+output: 
+  md_document:
+    variant: markdown_github
+---
+
+Run Seurat analysis to cluster the grafting data, split the before and after grafting cells into separate analyses. 
+
+### Load packages
+```{r warnings=FALSE}
+suppressMessages(library(Seurat))
+suppressMessages(library(gridExtra))
+```
+
+### Read data 
+
+```{r}
+# read rpkm values
+R <-read.table("../data/ensembl_rpkms_filtered.csv", sep=",", header=T)
+
+# read in meta data table
+M <- read.table("../data/metadata_all_filtered.csv", sep=",",header=T)
+
+```
+
+
+
+# Run Seurat for after grafting
+
+Use Seurat to extract variable genes and scale data by gene detection. 
+
+```{r}
+after <- grep("after",M$plate)
+
+savefile<-"../data/seurat_object_after.Rdata"
+if(file.exists(savefile)){
+  load(savefile)
+}else{
+
+  
+  dataS <- CreateSeuratObject(raw.data = R[,after], min.cells = 3, min.genes = 200, 
+    project = "after_grafting",is.expr=1,meta.data=M[after,])
+
+  scale.factor <- mean(colSums(R[,after]))
+  dataS <- NormalizeData(object = dataS, normalization.method = "LogNormalize", 
+    scale.factor = scale.factor)
+
+  # variable genes
+  dataS <- FindVariableGenes(object = dataS, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 1, x.high.cutoff = 10, y.cutoff = 1,cex.text.use=0.2)
+
+  length(x = dataS@var.genes)
+
+  # regress out number of detected genes.d
+  dataS <- ScaleData(object = dataS, vars.to.regress = c("nGene"),display.progress=F)
+
+  #PCA
+  dataS <- RunPCA(object = dataS, pc.genes = dataS@var.genes, do.print = FALSE)
+
+  #Determine statistically significant principal components
+  dataS <- JackStraw(object = dataS, num.replicate = 100, do.print = FALSE)
+  JackStrawPlot(object = dataS, PCs = 1:20)
+
+
+  # select PCs based on JackStraw - all first 12 look fine.
+  use.pcs <- 1:12
+  dataS <- FindClusters(object = dataS, reduction.type = "pca", dims.use = use.pcs, 
+    resolution = 0.6, print.output = 0, save.SNN = TRUE)
+
+  #tSNE
+
+  dataS <- RunTSNE(object = dataS, dims.use = use.pcs, do.fast = TRUE)
+  save(dataS,file=savefile)
+
+}
+
+# plot tSNE, define color scale
+TSNEPlot(object = dataS,do.label = T, colors.use = c("deepskyblue","blue2","green4","green1","greenyellow","red1","magenta"))
+
+# also plot by cell origin
+TSNEPlot(object = dataS, group.by = "sample_type", colors.use = c("red", "blue"))
+
+```
+
+
+# Run Seurat for before grafting 
+
+```{r}
+before <- grep("before",M$plate)
+
+savefile<-"../data/seurat_object_before.Rdata"
+if(file.exists(savefile)){
+  load(savefile)
+}else{
+
+  
+  dataSA <- CreateSeuratObject(raw.data = R[,before], min.cells = 3, min.genes = 200, 
+    project = "after_grafting",is.expr=1,meta.data=M[before,])
+
+  scale.factor <- mean(colSums(R[,before]))
+  dataSA <- NormalizeData(object = dataSA, normalization.method = "LogNormalize", 
+    scale.factor = scale.factor)
+
+  # variable genes
+  dataSA <- FindVariableGenes(object = dataSA, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 1, x.high.cutoff = 10, y.cutoff = 1,cex.text.use=0.2)
+
+  length(x = dataSA@var.genes)
+
+  # regress out number of detected genes.d
+  dataSA <- ScaleData(object = dataSA, vars.to.regress = c("nGene"),display.progress=F)
+
+  #PCA
+  dataSA <- RunPCA(object = dataSA, pc.genes = dataSA@var.genes, do.print = FALSE)
+
+  #Determine statistically significant principal components
+  dataSA <- JackStraw(object = dataSA, num.replicate = 100, do.print = FALSE)
+  JackStrawPlot(object = dataSA, PCs = 1:20)
+
+
+  # select PCs based on JackStraw - skip pc 7 & pc9
+  use.pcs <- c(1:6,8,10:12)
+  dataSA <- FindClusters(object = dataSA, reduction.type = "pca", dims.use = use.pcs, 
+    resolution = 0.6, print.output = 0, save.SNN = TRUE)
+
+#tSNE
+  dataSA <- RunTSNE(object = dataSA, dims.use = use.pcs, do.fast = TRUE)
+  save(dataSA,file=savefile)
+}
+# by seurat cluster, define color scale
+TSNEPlot(object = dataSA,do.label = T, colors.use = c("green","orange","cyan","yellow2","green4"))
+# by plate
+TSNEPlot(object = dataSA, group.by = "sample_type", colors.use = c( "hotpink1","grey56"))
+
+```
+
+
+### Plot some known markers onto the clusters after grafting
+
+```{r}
+plotG <- c("OLIG1:ENSG00000184221","GFAP:ENSG00000131095","TH:ENSG00000180176","SLC6A3:ENSG00000142319","GAD2:ENSG00000136750","NXPH4:ENSG00000182379","ALDH1A1:ENSG00000165092","NRSN2:ENSG00000125841","PITX3:ENSG00000107859")
+
+FeaturePlot(object = dataS, features.plot = plotG, cols.use = c("green","yellow","red"), reduction.use = "tsne")
+```
+
+# Manually merge clusters
+
+For the after grafting clusters
+
+```{r merge_after}
+
+clusterdef <- c("AC","AC","FBLC","FBLC","FBLC","N","OL")
+names(clusterdef) <- as.character(0:6)
+merged.clustersA <- clusterdef[as.character(dataS@ident)]
+
+dataS@meta.data$merged.clust <- merged.clustersA
+
+TSNEPlot(dataS, group.by = "merged.clust", colors.use = c("blue1", "green3", "yellow2", "red1"))
+
+```
+
+For before grafting clusters
+
+```{r}
+clusterdef <- c("VPE","NPc","VPEP","NPg","VPE")
+names(clusterdef) <- as.character(0:4)
+merged.clustersB <- clusterdef[as.character(dataSA@ident)]
+dataSA@meta.data$merged.clust <- merged.clustersB
+
+TSNEPlot(dataSA, group.by = "merged.clust", colors.use = c("orange", "magenta", "green", "cyan"))
+
+```
+
+### Make one metadata table
+
+Add in the clustering info and write to a file.
+
+```{r}
+
+M$SeuratCluster <- rep("na",nrow(M))
+M$SeuratCluster[after] <- paste("Graft-",as.character(dataS@ident),sep="")
+M$SeuratCluster[before] <- paste("Culture-",as.character(dataSA@ident), sep="")  
+  
+
+M$MergeClust <- rep("na",nrow(M))
+M$MergeClust[before]<-merged.clustersB
+M$MergeClust[after]<-merged.clustersA
+
+write.table(M, file="../data/meta_data_with_clust.csv",sep=",",quote=F)
+```
+
+# Cell cycle scoring
+
+```{r}
+# load cell cycle genes
+data(cc.genes)
+
+# obs! genes only have gene symbol, in matrix we have gene name + EnsID
+rn <- rownames(dataSA@raw.data)
+gname <- unlist(lapply(strsplit(rn,":"), function(x) x[1]))
+cc.genes <- lapply(lapply(cc.genes, match, gname), function(x) na.omit(rn[x]))
+# one gene has no translation, MLF1IP, in our annotation has name CENPU
+cc.genes$s.genes <- c(cc.genes$s.genes, rn[grep("CENPU", rn)])
+
+
+dataSA <- CellCycleScoring(dataSA, g2m.genes = cc.genes$g2m.genes,
+                          s.genes = cc.genes$s.genes)
+
+table(dataSA@meta.data$Phase)
+TSNEPlot(object = dataSA, group.by = "Phase", do.return=T)
+FeaturePlot(dataSA, features.plot = c("S.Score","G2M.Score"), no.legend = F)
+
+dataS <- CellCycleScoring(dataS, g2m.genes = cc.genes$g2m.genes,
+                          s.genes = cc.genes$s.genes)
+
+table(dataS@meta.data$Phase)
+TSNEPlot(object = dataS, group.by = "Phase", do.return=T)
+FeaturePlot(dataS, features.plot = c("S.Score","G2M.Score"), no.legend = F)
+
+```
+
+Clearly, the phase predictions are off for the after cells, where most cells are not cycling. 
+
+### Classify cells as cycling/non-cycling. 
+
+```{r}
+cutoff <- 1
+
+cycling <- rep("no", length(dataSA@ident))
+cycling[dataSA@meta.data$S.Score > cutoff] <- "yes"
+cycling[dataSA@meta.data$G2M.Score > cutoff] <- "yes"
+table(cycling)
+dataSA@meta.data$cycling <- factor(cycling)
+
+plot(dataSA@meta.data$S.Score, dataSA@meta.data$G2M.Score, col = dataSA@meta.data$cycling,pch=16, ylab="G2M.Score", xlab="S.Score")
+TSNEPlot(dataSA, group.by = "cycling")
+
+# same for after
+cycling <- rep("no", length(dataS@ident))
+cycling[dataS@meta.data$S.Score > cutoff] <- "yes"
+cycling[dataS@meta.data$G2M.Score > cutoff] <- "yes"
+table(cycling)
+dataS@meta.data$cycling <- factor(cycling)
+
+plot(dataS@meta.data$S.Score, dataS@meta.data$G2M.Score, col = dataS@meta.data$cycling, pch=16, ylab="G2M.Score", xlab="S.Score")
+TSNEPlot(dataS, group.by = "cycling")
+```
+
+
+#### Plot as pdf
+
+```{r}
+
+f1 <- FeaturePlot(dataS, features.plot = c("S.Score", "G2M.Score"),no.legend = F, do.return = T, no.axes = T)
+f1$c1 <- TSNEPlot(dataS, group.by = "cycling", do.return = T, no.axes =T)
+
+f4 <- FeaturePlot(dataSA, features.plot = c("S.Score","G2M.Score"),no.legend = F, do.return = T, no.axes = T)
+f4$c2 <- TSNEPlot(dataSA, group.by = "cycling", do.return =T, no.axes =T)
+
+f <- append(f1,f4)
+grid.arrange(grobs = f,ncol = 3)
+
+
+pdf("../data/cell_cycle_scores.pdf", width = 10, height = 7)
+grid.arrange(grobs = f,ncol = 3)
+dev.off()
+```
+
+
+```{r}
+sessionInfo()
+````
