@@ -1,0 +1,246 @@
+---
+title: "compare_to_linnarsson_atlas"
+output:
+  md_document:
+    variant: markdown_github
+---
+
+Using spearman correlations, compare the broad clusters in the linnarsson brain atlas to our celltypes.
+
+Using both the merged cluster def and the initial cluster def from Seurat. 
+
+As a gene set, use only top marker genes for calculating correlations. Take top 100 from our SAMseq lists plus all marker genes from their list (consists of ~ 6 genes per cluster )
+
+### Load packages
+```{r warning=FALSE}
+suppressMessages(library(Seurat))
+suppressMessages(library(loomR))
+suppressMessages(library(pheatmap))
+```
+
+### Read the loom files
+
+Files in folder linnarsson_atlas were downloaded from:
+
+http://mousebrain.org/downloads.html. 
+
+```{r}
+# connect to loom file
+lfile <- connect(filename = "../data/linnarsson_atlas/l5_all.agg.loom", mode = "r", skip.validate = T)
+
+# get expression matrix
+exprs <- lfile[["matrix"]][,]
+exprs <- t(exprs)
+
+# get cluster names and gene naems
+names <- lfile[["col_attrs"]]$names
+clust <- lfile[["col_attrs/ClusterName"]][]
+colnames(exprs) <- clust
+
+gene.names <- lfile[["row_attrs/Gene"]][]
+rownames(exprs) <- gene.names
+
+# get all annotations into one matrix
+M <- list()
+for (n in names){
+  M[[n]] <- lfile[["col_attrs"]][[n]][]
+}
+M <- Reduce(cbind,M)
+rownames(M) <- clust
+colnames(M) <- names
+M <- data.frame(M)
+
+```
+
+Total of 265 clusteres, and 27998 genes. 
+
+* ClusterName - refined cluster names - Level 6 clusters
+* TaxonomyRank1 - broad cell classes (Glia, Immune cells, Neurons, Vascular cells) 
+* TaxonomyRank2 - more refined classes, 6 groups.
+* TaxonomyRank3 - more refined classes, 16 groups.
+* TaxonomyRank4 - more refined classes, 39 groups.
+* Region
+
+
+### Extract all of their marker genes
+
+```{r}
+markers <- unique(unlist(sapply(as.vector(M$MarkerGenes), strsplit, " ")))
+length(markers)
+```
+
+### Read in our top marker genes.
+
+```{r}
+types <- c("AC", "OL", "N", "FBLC")
+SAM <- list()
+for (t in types){
+  SAM[[t]] <- read.table(sprintf("../data/samseq/samseq_%s_vs_restAfter.txt",t), header=T)
+}
+top.genes <- lapply(SAM, function(x) x[x$type == "down",]$Gene.ID[1:100])
+
+markers2 <- unique(unlist(top.genes))
+length(markers2)
+
+```
+
+
+# Read in the Seurat objects.
+
+Take only our after clusters. Redefine the Seurat clusters into manually annotated groups. 
+
+```{r load_seurat}
+savefile<-"../data/seurat_object_after.Rdata"
+load(savefile)
+
+clusterdef <- c("AC","AC","FBLC","FBLC","FBLC","N","OL")
+names(clusterdef) <- as.character(0:6)
+merged.clusters <- clusterdef[as.character(dataS@ident)]
+
+names <- c("astrocytes","oligodendrocytes","neurons","FBLC")
+shorterNames <- c("AC","OL","N","FBLC")
+col=c("blue1","magenta","red1","green3")
+
+RPKM <- dataS@raw.data
+lr <- log2(RPKM+1)
+
+clusters <- split(1:ncol(RPKM),merged.clusters)
+clusters <- clusters[c(1,4,3,2)]
+
+M.graft <- dataS@meta.data
+M.graft$merged.clusters <- merged.clusters
+```
+
+Calculate mean expression across our clusters.
+
+```{r}
+mean.clust <- Reduce(cbind,lapply(clusters, function(x) rowMeans(lr[,x])))
+colnames(mean.clust) <- names(clusters)
+
+seurat.clust <- split(1:ncol(RPKM),dataS@ident)
+
+mean.seurat <- Reduce(cbind,lapply(seurat.clust, function(x) rowMeans(lr[,x])))
+# rename with annotation as well.
+colnames(mean.seurat) <- paste(names(seurat.clust), clusterdef, sep="-")
+```
+
+## Translate human to mouse genes
+
+```{r}
+transfile <- "../data/linnarsson_atlas/human_gene_translations.txt"
+human.ensembl <- unlist(lapply(strsplit(rownames(RPKM), ":"), function(x) x[2]))
+human.ensembl.fix <- gsub("\\.\\.\\d+","",human.ensembl)
+
+
+if (file.exists(transfile)){
+  gene.translation <- read.table(transfile)
+}else{
+
+  suppressMessages(library(biomaRt))
+  # Load human ensembl attributes
+  human = biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+  # Load mouse ensembl attributes
+  mouse = biomaRt::useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+  # Link both datasets and retrieve human gene id + name
+  gene.translation = biomaRt::getLDS(attributes = c("external_gene_name","ensembl_gene_id"), filters = "ensembl_gene_id", values = mouse.ensembl.fix , mart = human, attributesL = c("ensembl_gene_id","external_gene_name"), martL = mouse, uniqueRows = T)
+
+  head(gene.translation)
+  
+  # only keep genes that also exists in the expression data
+  gene.translation$merge.name <- paste(gene.translation$Gene.name, gene.translation$Gene.stable.ID, sep=":")
+
+  matches1 <- sapply(gene.translation$merge.name, match, rownames(RPKM))
+  matches2 <- sapply(gene.translation$Gene.name.1, match, rownames(exprs))
+  keep <- (is.na(matches1) + is.na(matches2) )==0
+  gene.translation <- gene.translation[keep,]
+    
+  write.table(gene.translation, file=transfile)
+}
+
+# select only genes that are among the marker genes
+keep.markers1 <- which(gene.translation$Gene.name.1 %in% markers)
+length(keep.markers1)
+keep.markers2 <- which(gene.translation$merge.name %in% markers2)
+length(keep.markers2)
+keep.markers <- union(keep.markers1,keep.markers2)
+length(keep.markers)
+
+# make new expression matrices with these genes. One for Seurat clusters, one for merged clusters, one for linnarsson clusters. 
+exprsA <- log2(exprs[match(gene.translation$Gene.name.1[keep.markers], rownames(exprs)),]+1)
+exprsC <- mean.clust[match(gene.translation$merge.name[keep.markers], rownames(mean.clust)),]
+exprsS <- mean.seurat[match(gene.translation$merge.name[keep.markers], rownames(mean.seurat)),]
+```
+
+
+### Mean expression at Taxonomy Rank 4
+
+Take MBA data at Tax rank 4 and compute mean expression.
+
+```{r}
+
+level4 <- split(1:ncol(exprsA), M$TaxonomyRank4)
+get.mean <- function(x){
+  if (length(x) == 1) { return(exprsA[,x])}
+  else { return(rowMeans(exprsA[,x]))}
+}
+mean.level4 <- lapply(level4, get.mean)
+exprs4 <- Reduce(cbind, mean.level4)
+colnames(exprs4) <- names(level4)
+
+#make color def for Tax rank2 
+tax2 <- as.character(M[match(names(level4), M$TaxonomyRank4),]$TaxonomyRank2)
+colorsC <- data.frame(TaxonomyRank2 =  tax2)
+rownames(colorsC) <- names(level4)
+
+```
+
+# Calculate correlation 
+
+And plot as a heatmap.
+
+```{r fig.width=10}
+# correlation to seurat clusters
+c4S <- cor(exprsS,exprs4, method = "spearman")
+pheatmap(t(c4S), fotsize_col = 8, annotation_row = colorsC)
+
+# correlation to merged clusters
+c4C <- cor(exprsC,exprs4, method = "spearman")
+pheatmap(t(c4C), fontsize_col = 8, annotation_row = colorsC)
+
+```
+
+Make pdfs with the same plots.
+
+```{r}
+pdf("../data/linnarsson_atlas/heatmaps_level4_vs_clust_atlas_markers.pdf")
+pheatmap(t(c4S), fotsize_col = 8, cluster_cols = F, annotation_row = colorsC)
+pheatmap(t(c4C), fontsize_col = 8, cluster_cols = F, annotation_row = colorsC)
+dev.off()
+```
+
+
+# Make a plot with only the Enteric glia subclusters
+
+```{r}
+enteric <- grep("Enteric glia", M$TaxonomyRank4)
+cES <- cor(exprsS,exprsA[,enteric], method = "spearman")
+pheatmap(t(cES))
+
+cEC <- cor(exprsC,exprsA[,enteric], method = "spearman")
+pheatmap(t(cEC))
+
+# print correlations to FBLCs
+print(cEC["FBLC",])
+
+print(cES[grep("FBLC",rownames(cES)),])
+
+```
+
+The whole FBLC cluster have highest similarity to ENMFB (Enteric mesothelial fibroblasts). 
+
+Subclusters 2 & 3 also have highest similarity to ENMFB, while cluster 4 has highest similarity to ENTG2.  
+
+```{r}
+sessionInfo()
+```
