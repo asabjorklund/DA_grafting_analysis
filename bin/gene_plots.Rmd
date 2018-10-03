@@ -1,0 +1,320 @@
+---
+title: "gene_plots"
+output: 
+  md_document:
+    variant: markdown_github
+---
+
+Plot gene expression for selected genes as violins, heatmaps and onto tSNEs.
+
+After grafting genes:
+/proj/uppstore2017201/b2014109/private/analysis_KT/transplants/seurat_barplot/gene_list_fig2_barplot_final.csv
+
+Before grafting genes: 
+/proj/uppstore2017201/b2014109/private/analysis_KT/transplants/seurat_barplot/gene_list_fig4_barplot_2.csv 
+
+### Load packages
+```{r warning=FALSE}
+suppressMessages(library(Seurat))
+suppressMessages(library(sm))
+suppressMessages(library(pheatmap))
+source("vioplot.list.R")
+```
+
+
+# Violin plots
+
+### Start with the After genes.
+
+
+```{r seurat}
+savefile<-"../data/seurat_object_after.Rdata"
+load(savefile)
+
+clusterdef <- c("AC","AC","FBLC","FBLC","FBLC","N","OL")
+names(clusterdef) <- as.character(0:6)
+merged.clustersA <- clusterdef[as.character(dataS@ident)]
+
+names <- c("astrocytes","oligodendrocytes","neurons","FBLC")
+shorterNames <- c("AC","OL","N","FBLC")
+col=c("blue1","magenta","red1","green3")
+
+RPKM <- dataS@raw.data
+lrA <- log2(RPKM+1)
+
+genes <- read.table("../data/gene_plots/gene_list_fig2_barplot_final.csv", header = T)
+genes <- as.character(genes[,1])
+
+# make a list with cluster def
+clusters <- split(1:ncol(RPKM),merged.clustersA)
+clusters <- clusters[c(1,4,3,2)] # reorder for plotting
+
+```
+
+Define plotting function
+
+```{r}
+plot.genes <- function(gene,exp,clusts, colordef, small = TRUE) {
+        # if gene is not in dataset.
+        if (!gene %in% rownames(exp)){
+          plot.new()
+          return(0)
+        }
+
+        e <- exp[gene,]
+        l <- lapply(clusts, function(x) e[x])
+        # if the gene is not expressed in a cluster
+        lz<- which(unlist(lapply(l,sum))==0)
+        for (z in lz)  { l[[z]]<-rnorm(length(l[[z]]),mean=0,sd=1e-30) }
+        ylim <- NULL
+        if (length(lz) == length(clusts)) { ylim <- c(0,8)}
+        if (small) {
+          vioplot.list.small(l,col=colordef, ylim = ylim, border = NA, drawRect = F)
+        }else {
+          vioplot.list(l,col=colordef)
+        }
+        n <- unlist(strsplit(gene, ":"))[1]
+        mtext(n, cex=0.7)
+}
+```
+
+Plot to a pdf
+
+```{r}
+pdf("../data/gene_plots/vioplots_after.pdf")
+
+par(mfrow=c(6,4),mar=c(5,1,2,1),cex=0.4)
+for (gene in genes){
+  plot.genes(gene,lrA,clusters,col, small = T)
+}
+
+dev.off()
+
+```
+
+### Same for the before genes.
+
+```{r}
+savefile<-"../data/seurat_object_before.Rdata"
+load(savefile)
+names <- c("NPg","NPc","VPEP","VPE")
+
+clusterdef <- c("VPE","NPc","VPEP","NPg","VPE")
+names(clusterdef) <- as.character(0:4)
+merged.clustersB <- clusterdef[as.character(dataSA@ident)]
+col <- c("yellow", "orange","cyan", "green")
+
+
+RPKM <- dataSA@raw.data
+lrB <- log2(RPKM+1)
+
+genes <- read.table("../data/gene_plots/gene_list_fig4_barplot_2.csv", header = T)
+genes <- as.character(genes[,1])
+
+clusters <- split(1:ncol(RPKM),merged.clustersB)
+clusters <- clusters[c(2,1,4,3)]
+
+```
+
+
+```{r}
+pdf("../data/gene_plots/vioplots_before.pdf")
+
+par(mfrow=c(6,4),mar=c(5,1,2,1),cex=0.4)
+for (gene in genes){
+  plot.genes(as.character(gene),lrB,clusters,col, small = T)
+}
+
+dev.off()
+
+```
+
+# Heatmaps with selected genes
+
+Heatmap with 20 DE genes per cluster, cells after grafting.
+
+```{r}
+gene.tableA <- read.table("../data/gene_plots/gene_list_heatmap_20genesGroup_SupFig2_TransplantAfter.csv",sep=";",header=T)
+
+
+# reorder cells for plotting
+sets.cell <- split(colnames(lrA),merged.clustersA)
+sets.cell2 <- sets.cell[c("AC","OL","N","FBLC")]
+ordered <- unlist(sets.cell2)
+o <- match(ordered, colnames(lrA))
+
+# reorder the matrix
+lr <- lrA[match(gene.tableA$Gene,rownames(lrA)),match(ordered, colnames(lrA))]
+
+# remove ensembl name 
+rownames(lr) <- unlist(lapply(strsplit(rownames(lr), ":"), function(x) x[1]))
+
+# define coloring
+cell.origin <- dataS@meta.data$sample_type
+cell.cluster <- merged.clustersA
+
+colorsC <- data.frame(cell_origin = cell.origin,cell_type = cell.cluster)
+rownames(colorsC) <- colnames(lrA)
+
+#define gaps in plot
+gapsR <- which(!duplicated(gene.tableA$Group))[-1]-1
+gapsC <- which(!duplicated(merged.clustersA[o]))[-1]-1
+
+# color legends
+clustertype <- names(sets.cell2)
+coldef.clustertype<- c("blue1", "magenta","red","green3")
+names(coldef.clustertype) <- clustertype
+
+
+celltypes <- unique(cell.origin)
+coldef.celltypes <- c("blue","red")
+names(coldef.celltypes) <- celltypes
+
+ann_colors = list(
+    cell_type = coldef.clustertype,
+    cell_origin = coldef.celltypes
+)
+
+lr.scale <- t(apply(lr,1,function(x) x/max(x)))
+
+pheatmap(lr.scale, annotation_col = colorsC,  cluster_rows=F,cluster_cols=F, show_colnames=F,gaps_col=gapsC, gaps_row=gapsR, annotation_colors = ann_colors, fontsize_row = 5)
+
+# print to pdf
+pdf("../data/gene_plots/heatmap_after_genes.pdf")
+pheatmap(lr.scale, annotation_col = colorsC,  cluster_rows=F,cluster_cols=F, show_colnames=F,gaps_col=gapsC, gaps_row=gapsR, annotation_colors = ann_colors, fontsize_row = 5)
+dev.off()
+```
+
+Heatmap with 20 DE genes per cluster, cells before grafting.
+
+```{r}
+gene.tableB <- read.table("../data/gene_plots/gene_list_heatmap_20genesGroup_SupFig4_TransplantBefore.csv",sep=";",header=T)
+
+
+# reorder cells for plotting
+sets.cell <- split(colnames(lrB),merged.clustersB)
+sets.cell2 <- sets.cell[c("NPg","NPc","VPEP","VPE")]
+ordered <- unlist(sets.cell2)
+o <- match(ordered, colnames(lrB))
+
+# reorder the matrix
+lr <- lrB[match(gene.tableB$Gene,rownames(lrB)),match(ordered, colnames(lrB))]
+
+# remove ensembl name 
+rownames(lr) <- unlist(lapply(strsplit(rownames(lr), ":"), function(x) x[1]))
+
+# define coloring
+cell.origin <- dataSA@meta.data$sample_type
+cell.cluster <- merged.clustersB
+
+colorsC <- data.frame(cell_origin = cell.origin,cell_type = cell.cluster)
+rownames(colorsC) <- colnames(lrB)
+
+#define gaps in plot
+gapsR <- which(!duplicated(gene.tableB$Group))[-1]-1
+gapsC <- which(!duplicated(merged.clustersB[o]))[-1]-1
+
+# color legends
+clustertype <- names(sets.cell2)
+coldef.clustertype<- c("yellow2", "orange","cyan","green")
+names(coldef.clustertype) <- clustertype
+
+
+celltypes <- unique(cell.origin)
+coldef.celltypes <- c("grey56","hotpink1")
+names(coldef.celltypes) <- celltypes
+
+ann_colors = list(
+    cell_type = coldef.clustertype,
+    cell_origin = coldef.celltypes
+)
+
+lr.scale <- t(apply(lr,1,function(x) x/max(x)))
+
+pheatmap(lr.scale, annotation_col = colorsC,  cluster_rows=F,cluster_cols=F, show_colnames=F,gaps_col=gapsC, gaps_row=gapsR, annotation_colors = ann_colors, fontsize_row = 5)
+
+# print to pdf
+pdf("../data/gene_plots/heatmap_before_genes.pdf")
+pheatmap(lr.scale, annotation_col = colorsC,  cluster_rows=F,cluster_cols=F, show_colnames=F,gaps_col=gapsC, gaps_row=gapsR, annotation_colors = ann_colors, fontsize_row = 5)
+dev.off()
+
+```
+
+
+
+# tSNE plots visualizing expression of selected genes
+
+Function for plotting.
+
+```{r}
+cc<-colorRampPalette(c("green","yellow","red"))
+rpkm.color <- function(x,colscale,col.range=NULL){
+        x.range<-range(na.omit(x))
+        by=0.1
+        if (is.null(col.range)){
+                by=1
+                if (x.range[2]-x.range[1] <10){ by =0.01 }
+                col.range<-seq(x.range[1],x.range[2],by=by)
+        }
+        col.def<-colscale(length(col.range))
+        col.idx<-round((x-x.range[1])/by)+1
+        col.idx[col.idx>length(col.range)]<-length(col.range)
+        cols<-col.def[col.idx]
+        return(cols)
+}
+
+```
+
+Read in full expression matrix.
+
+```{r}
+R <-read.table("../data/ensembl_rpkms_filtered.csv", sep=",", header=T)
+M <- read.table("../data/metadata_all_filtered.csv", sep=",",header=T)
+
+after <- grep("after",M$plate)
+before <- grep("before",M$plate)
+
+lrB <- as.matrix(log2(R[,before]+1))
+lrA <- as.matrix(log2(R[,after]+1))
+```
+
+```{r}
+figure4_relatedGenes<-c("NES:ENSG00000132688","SOX2:ENSG00000181449","SOX9:ENSG00000125398","PROM1:ENSG00000007062","RFX4:ENSG00000111783","NOTCH1:ENSG00000148400","NOTCH2:ENSG00000134250","HEY1:ENSG00000164683","JAG1:ENSG00000101384","DCX:ENSG00000077279","NCAM1:ENSG00000149294","SYT1:ENSG00000067715","STMN2:ENSG00000104435","GAP43:ENSG00000172020","TH:ENSG00000180176","DDC:ENSG00000132437","PBX1:ENSG00000185630..1","PBX1:ENSG00000185630..2","NEUROG2:ENSG00000178403","ASCL1:ENSG00000139352","HES1:ENSG00000114315","HES5:ENSG00000197921","LMX1A:ENSG00000162761","FOXA2:ENSG00000125798","NR4A2:ENSG00000153234","PITX3:ENSG00000107859","EN1:ENSG00000163064","CCNB2:ENSG00000157456","AURKB:ENSG00000178999","PTTG1:ENSG00000164611","TOP2A:ENSG00000131747","COL3A1:ENSG00000168542","FBLN1:ENSG00000077942","EMP2:ENSG00000213853","S100A11:ENSG00000163191","IFITM2:ENSG00000185201","COL1A1:ENSG00000108821","PCOLCE:ENSG00000106333","CPXM1:ENSG00000088882","MMP2:ENSG00000087245","SERPINF1:ENSG00000132386","MFAP2:ENSG00000117122","TPM2:ENSG00000198467","POU5F1:ENSG00000204531","NANOG:ENSG00000111704","T:ENSG00000164458","SOX17:ENSG00000164736","DLK1:ENSG00000185559","OTX2:ENSG00000165588")
+
+tsneB <- dataSA@dr$tsne@cell.embeddings
+
+pdf("../data/gene_plots/tsne_before.pdf")
+par(mfrow=c(3,3),mar=c(3,3,2,1))
+for (gn in figure4_relatedGenes) {
+    m<-match(gn,rownames(lrB))
+    maxR<-ceiling(max(lrB[m,]))
+    col.range <- seq(0,maxR,by=0.1)
+    col <- rpkm.color(lrB[m,],cc,col.range)
+    plot(tsneB, col= col, pch=16, cex=0.4,main=gn,axes=FALSE, ylab="",xlab="")
+}
+dev.off()
+
+
+```
+```{r}
+ExtFigure2_relatedGenes<-c("AQP4:ENSG00000171885","SLC1A3:ENSG00000079215","GFAP:ENSG00000131095","GJA1:ENSG00000152661","EDNRB:ENSG00000136160","SLC4A4:ENSG00000080493","LRRC3B:ENSG00000179796","FBXO2:ENSG00000116661","OLIG1:ENSG00000184221","OLIG2:ENSG00000205927","PCDH15:ENSG00000150275","PMP2:ENSG00000147588","NKX2-2:ENSG00000125820","SOX10:ENSG00000100146","PDGFRA:ENSG00000134853..1","PDGFRA:ENSG00000134853..2","PLP1:ENSG00000123560","GAP43:ENSG00000172020","RBFOX3:ENSG00000167281","NSG2:ENSG00000170091","SNAP25:ENSG00000132639","NEFL:ENSG00000104725","SYN1:ENSG00000008056","TH:ENSG00000180176","NR4A2:ENSG00000153234","SLC18A2:ENSG00000165646","DDC:ENSG00000132437","RET:ENSG00000165731","GFRA1:ENSG00000151892","FOXA2:ENSG00000125798","PDGFRA:ENSG00000134853..1","PDGFRA:ENSG00000134853..2","COL1A1:ENSG00000108821","COL1A2:ENSG00000164692","LUM:ENSG00000139329","DCN:ENSG00000011465","FBLN1:ENSG00000077942")
+
+tsneA <- dataS@dr$tsne@cell.embeddings
+
+pdf("../data/gene_plots/tsne_after.pdf")
+par(mfrow=c(3,3),mar=c(3,3,2,1))
+for (gn in ExtFigure2_relatedGenes) {
+    m<-match(gn,rownames(lrA))
+    maxR<-ceiling(max(lrA[m,]))
+    col.range <- seq(0,maxR,by=0.1)
+    col <- rpkm.color(lrA[m,],cc,col.range)
+    plot(tsneA, col= col, pch=16, cex=0.4,main=gn,axes=FALSE, ylab="",xlab="")
+}
+dev.off()
+
+```
+
+
+```{r}
+sessionInfo()
+```
