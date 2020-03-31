@@ -1,0 +1,136 @@
+---
+title: "Manuscript figures w/o SS2"
+output: 
+  md_document:
+    variant: markdown_github
+---
+
+Plot figures for manuscript. Use the integrated object from Data_integration.Rmd 
+(file seurat_integrated_rat_scale_res0.1.Rdata)
+
+Plot UMAP with:
+
+* Clusters (4 main celltypes)
+* FACS/NotFACS
+* SS2/10x
+
+Violin plots for the 4 clusters - same markers as in SS2 data only.
+
+
+```{r packages, warning=FALSE}
+suppressMessages(require(Seurat))
+suppressMessages(require(Matrix))
+suppressMessages(require(gridExtra))
+suppressMessages(require(ggplot2))
+suppressMessages(require(pheatmap))
+
+```
+
+```{r load}
+load(file = "../data/processed2/integrated/seurat_integrated_rat_scale_res0.1.Rdata")
+
+# reassing cluster names to celltypes
+celltypes <- c("Astrocyte","FBLC","Neuron","Cycling")
+names(celltypes) <- as.character(0:3)
+
+ct <- celltypes[data.integrated@active.ident]
+data.integrated <- AddMetaData(data.integrated, ct, col.name = "CelltypeCluster")
+```
+
+### plot UMAPs
+
+```{r umap}
+# make one version with labels in plot
+scaleC <- scale_colour_manual(values = c("blue1", "gray","green3", "red1"))
+
+# Per cluster with legend
+p1 <- DimPlot(data.integrated, group.by = "CelltypeCluster") + NoAxes() +scaleC
+
+# one with FACS/notFACS
+p2 <- DimPlot(data.integrated, group.by = "Type", order = c("NotFACS","FACS")) + NoAxes() + scale_colour_manual(values = c("cyan", "magenta"))
+
+# one with Rat
+p3 <- DimPlot(data.integrated, group.by = "Rat") + NoAxes()
+
+pdf("../data/figures2/umap_integrated_woSS2.pdf")
+grid.arrange(p1,p2,p3, ncol=2)
+
+# all same plots without legends.
+p1 <- DimPlot(data.integrated, group.by = "CelltypeCluster") + NoAxes() + 
+  scaleC + NoLegend() + ggtitle("Clusters")
+p2 <- DimPlot(data.integrated, group.by = "Type", order = c("NotFACS","FACS")) + NoAxes() + NoLegend() + 
+  scale_colour_manual(values = c("cyan", "magenta")) + ggtitle("FACS type")
+p3 <- DimPlot(data.integrated, group.by = "Rat") + NoAxes() + NoLegend() +  ggtitle("Rat")
+grid.arrange(p1,p2,p3, ncol=2)
+dev.off()
+```
+
+
+
+### gene violin plots as in SS2 figure.
+
+```{r violin}
+genes <- list()
+genes$Astrocyte <-  c("AQP4", "GFAP", "SLC1A3",  "GJA1", "EDNRB", "SLC4A4")
+genes$Oligodentrocyte <- c("OLIG1", "OLIG2","NKX2-2",  "SOX10",  "PLP1",  "PMP2")
+genes$PanNeuronal <- c("GAP43", "RBFOX3","NSG2","SNAP25", "NEFL", "SYN1")
+genes$DopamineNeuron <-c("TH","NR4A2","SLC18A2", "DDC",  "RET", "GFRA1")
+genes$FBLC <- c("PDGFRA",   "COL1A1",  "COL1A2",  "LUM",     "DCN",     "FBLN1")
+
+temp <- data.frame(t(data.integrated@assays$RNA@data[unlist(genes),]), check.names = F)
+temp$cluster <- data.integrated@meta.data$CelltypeCluster
+short <- temp$cluster
+short[short=="Cycling"] <- "CC"
+short[short=="Neuron"] <- "N"
+short[short=="Astrocyte"] <- "AC"
+temp$cluster <- short
+
+pl <- list()
+noleg <- theme(legend.position="none")
+scaleF <- scale_fill_manual(values = c("blue1", "gray","green3", "red1"))
+for (gene in unlist(genes)){
+  pl[[gene]] <- ggplot() + geom_violin(data=temp,aes_(x=as.name("cluster"),y=as.name(gene),fill=as.name("cluster"), colour = as.name("cluster") ), scale="width") + 
+    theme_void() + noleg + scaleF + scaleC + theme(title =element_text(size=6, face='bold')) + ggtitle(gene)
+}
+
+# OBS! to get it filled by row instead of column, rearrange the plots
+pl2 <- pl[as.vector(t(matrix(names(pl),nrow=6)))]
+
+pdf("../data/figures2/violins_integrated_woSS2.pdf", width = 14, height = 7)
+grid.arrange(grobs=pl2, nrow=6)
+dev.off()
+
+```
+
+
+### Umap plots of gene list 
+
+Gene list from Katarina with genes (gene_list_NatureMedicine.csv)
+
+```{r}
+genes2 <- read.table("../data/figures2/gene_list_NatureMedicine.csv", header = T)
+
+genes2$symbol <- unlist(lapply(strsplit(as.character(genes2$Gene),":"), function(x) x[1]))
+
+# is all the same genes as above except 5
+# [1] "PCDH15"  "SLC17A6" "SLC17A8" "GAD2"    "SLC32A1"
+m <- match(genes2$symbol, unlist(genes))
+genes2[which(is.na(m)),"symbol"]
+
+data.integrated@active.assay <- "RNA"
+plots <- FeaturePlot(data.integrated, features = genes2$symbol, reduction = "umap", combine=F, cols = c("yellow","red","black"))
+plots <- lapply(plots, function(x) x + NoAxes() + theme(legend.text = element_text(size=6)))
+
+pdf("../data/figures2/umap_gene_plots_woSS2.pdf", width = 10, height = 7)
+for (i in 1:4){
+  sel <- (i*9-8):min(i*9,length(plots))
+  grid.arrange(grobs=plots[sel])
+}
+dev.off()
+
+```
+
+
+```{r}
+sessionInfo()
+```
