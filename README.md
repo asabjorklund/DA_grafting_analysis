@@ -30,10 +30,10 @@ The scripts used to produce all figures are:
 * Elimination of rat contaminating cells [Check_rno_vs_hsa](bin_10x/Check_rno_vs_hsa.md)
 * QC filtering [Summarize_QC_stats](bin_10x/Summarize_QC_stats.md)
 * Seurat analysis with one rat at a time [Seurat_per_rat](bin_10x/Seurat_per_rat.md)
-* Data integration of all seurat objects per rat [Data_integration](Data_integration.md)
-* Data integration of all seurat objects per rat and SS2 ES data [Data_integration_wSS2](Data_integration_wSS2.md)
-* Scripts for producing pdf format plots for figures with integrated data [Manuscript_figures_woSS2](Manuscript_figures_woSS2.md)
-* Scripts for producing pdf format plots for figures with integrated data with SS2 [Manuscript_figures](Manuscript_figures.md)
+* Data integration of all seurat objects per rat [Data_integration](bin_10x/Data_integration.md)
+* Data integration of all seurat objects per rat and SS2 ES data [Data_integration_wSS2](bin_10x/Data_integration_wSS2.md)
+* Scripts for producing pdf format plots for figures with integrated data [Manuscript_figures_woSS2](bin_10x/Manuscript_figures_woSS2.md)
+* Scripts for producing pdf format plots for figures with integrated data with SS2 [Manuscript_figures](bin_10x/Manuscript_figures.md)
 
 
 
