@@ -1,0 +1,107 @@
+---
+title: "Seurat_before_grafting_CCregression"
+output:
+  md_document:
+    variant: markdown_github
+---
+
+Rerun analysis of cells before grafting with CC-regression.
+
+### Load packages
+
+``````{r}
+#suppressMessages(library(scater))
+#suppressMessages(library(SC3))
+suppressMessages(require(gridExtra))
+suppressMessages(library(Seurat))
+``````
+
+
+```{r}
+load("../data/seurat_object_before.Rdata")
+
+meta <- dataSA@meta.data
+meta$SeuratCluster <- meta$res.0.6
+
+``````
+
+## Create Seurat Object
+
+Create a new seurat object and normalize
+
+```{r}
+dataSA <- CreateSeuratObject(raw.data = dataSA@raw.data, min.cells = 3, min.genes = 200, project = "before_grafting",is.expr=1,meta.data=meta)
+
+scale.factor <- mean(colSums(dataSA@raw.data))
+dataSA <- NormalizeData(object = dataSA, normalization.method = "LogNormalize", scale.factor = scale.factor)
+
+# variable genes
+dataSA <- FindVariableGenes(object = dataSA, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 1, x.high.cutoff = 10, y.cutoff = 1,cex.text.use=0.2)
+length(x = dataSA@var.genes)
+```
+
+## Cell cycle scoring
+
+```{r}
+
+### cell cycle genes
+data(cc.genes)
+
+
+# obs! genes only have gene symbol, in matrix we have gene name + EnsID
+rn <- rownames(dataSA@raw.data)
+gname <- unlist(lapply(strsplit(rn,":"), function(x) x[1]))
+cc.genes <- lapply(lapply(cc.genes, match, gname), function(x) na.omit(rn[x]))
+# one gene has no translation, MLF1IP, in our annotation has name CENPU
+cc.genes$s.genes <- c(cc.genes$s.genes, rn[grep("CENPU", rn)])
+
+
+dataSA <- CellCycleScoring(dataSA, g2m.genes = cc.genes$g2m.genes,
+                          s.genes = cc.genes$s.genes)
+
+table(dataSA@meta.data$Phase)
+```
+
+ 
+ 
+##  Cell cycle regression 
+
+Regress out number of detected genes and cell cycle scores. Then run dim reduction and clustering.
+
+```{r}
+dataSA <- ScaleData(object = dataSA, vars.to.regress = c("nGene","S.Score","G2M.Score"),display.progress=F)
+
+#PCA
+dataSA <- RunPCA(object = dataSA, pc.genes = dataSA@var.genes, do.print = FALSE)
+
+#Determine statistically significant principal components
+dataSA <- JackStraw(object = dataSA, num.replicate = 100, display.progress=FALSE)
+JackStrawPlot(object = dataSA, PCs = 1:20)
+
+use.pcs <- c(1,2,4,5,7,9,10,12,13)  
+dataSA <- FindClusters(object = dataSA, reduction.type = "pca", dims.use = use.pcs, 
+resolution = 0.6, print.output = 0, save.SNN = TRUE)
+
+
+#tSNE
+dataSA <- RunTSNE(object = dataSA, dims.use = use.pcs, do.fast = TRUE)
+
+```
+
+## Plot
+
+```{r}
+### tSNE plots
+TSNEPlot(object = dataSA)
+
+# by sample_type
+TSNEPlot(object = dataSA, group.by = "sample_type", colors.use = c( "hotpink1","grey56"))
+
+### Clusters without Cell Cycle regression
+TSNEPlot(object = dataSA, group.by = "SeuratCluster", colors.use = c("green","orange","cyan","yellow2","green4"))
+```
+
+```{r}
+sessionInfo()
+
+```
