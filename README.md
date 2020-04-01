@@ -22,6 +22,7 @@ The scripts used to produce all manuscript figures are:
 * DE detection with SAMseq [run_samseq](bin/run_samseq.md).
 * Comparison to the Mouse Brain Atlas clusters [compare_to_linnarsson_atlas](bin/compare_to_linnarsson_atlas.md).
 * Plotting gene expression in violin plots, heatmaps and onto tsne [plot_genes](plot_genes.md)
+* Seurat analysis for cells before grafting, with cell cycle regression [Seurat_before_grafting_CCregression](Seurat_before_grafting_CCregression.md)
 
 ## Code for 10x analysis
 
