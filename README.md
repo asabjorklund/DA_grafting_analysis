@@ -7,12 +7,12 @@ All code required to reproduce the main analysis figures of the paper “Single 
 
 The analysis has been performed in two steps:
 
-* All Smart-seq2 data analysis was performed with Seurat v2.3.4. All scripts for that analysis is in folder [bin][bin/].
-* All 10x and integrated analysis was performed with Seurat v3.0.0. All scripts for that analysis is in folder [bin_10x][bin_10x/].
+* All Smart-seq2 data analysis was performed with Seurat v2.3.4. All scripts for that analysis is in folder [bin](bin).
+* All 10x and integrated analysis was performed with Seurat v3.0.0. All scripts for that analysis is in folder [bin_10x](bin_10x).
 
-SS2 data is deposited at GEO GSE118412, expression matrices are provided as gz files in folder [data][data/]
+SS2 data is deposited at GEO GSE118412, expression matrices are provided as gz files in folder [data](data/)
 
-10x data is deposited at GEO GSE132758.
+10x data is deposited at GEO GSE132758, also Seurat object after QC filtering for all 10x samples can be found [here](data/processed2/filtered_seurat_object.Rdata).  
 
 ## Code for SS2 analysis
 
