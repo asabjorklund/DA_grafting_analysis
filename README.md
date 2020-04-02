@@ -3,7 +3,7 @@ Analysis of single cell RNA-seq data from grafting of human cells in rat brains.
 
 
 
-All code required to reproduce the main analysis figures of the paper “Single Cell Gene Expression Analysis Reveals Human Stem Cell-Derived Graft Composition in a Cell Therapy Model of Parkinson’s Disease" by Tiklova et al. 
+All code required to reproduce the main analysis figures of the paper “Single Cell Transcriptomics Identifies Stem Cell-Derived Graft Composition in a Model of Parkinson’s Disease" by Tiklova et al. 
 
 The analysis has been performed in two steps:
 
