@@ -12,7 +12,7 @@ The analysis has been performed in two steps:
 
 SS2 data is deposited at GEO GSE118412, expression matrices are provided as gz files in folder [data](data/)
 
-10x data is deposited at GEO GSE132758, also Seurat object after QC filtering for all 10x samples can be found [here](data/processed2/filtered_seurat_object.Rdata).  
+10x data is deposited at GEO GSE132758, also Seurat object after QC filtering for all 10x samples can be found [here](data/processed2/).  
 
 ## Code for SS2 analysis
 
