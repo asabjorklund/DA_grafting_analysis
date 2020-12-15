@@ -1,0 +1,5 @@
+# required R packages
+shiny
+data.table
+ggplot2
+gridExtra
